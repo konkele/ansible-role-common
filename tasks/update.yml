@@ -3,19 +3,16 @@
   apt:
     update_cache: yes
     cache_valid_time: 3600
-  tags: update
 
 - name: Upgrade all packages
   apt:
     upgrade: dist
     autoremove: yes
-  tags: update
 
 - name: Check if reboot is required
   stat:
     path: /var/run/reboot-required
   register: reboot_required_file
-  tags: update
 
 - name: Reboot host if needed
   reboot:
@@ -23,4 +20,3 @@
     post_reboot_delay: 30
   when: reboot_required_file.stat.exists
   throttle: 1
-  tags: update

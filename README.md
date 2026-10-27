@@ -30,6 +30,11 @@ This role follows a deterministic, inventory-driven design that emphasizes predi
   * Enabled by default
   * Can be disabled per inventory scope
 
+* **Package Management**
+  * Install a configurable list of packages
+  * Skip installation when the package list is empty
+  * Can be disabled per inventory scope
+
 * **NFS Storage**
   * Install NFS client packages
   * Create mount points
@@ -87,6 +92,10 @@ common_firewall_manage: true
 firewall_allowed_tcp_ports:
   - 22
 
+# Packages
+common_packages_manage: true
+common_packages: []
+
 # System Updates
 common_update_manage: true
 ```
@@ -104,6 +113,47 @@ common_firewall_manage: false
 ```
 
 When disabled, the role makes no changes to firewall configuration and does not assume ownership of existing firewall state.
+
+---
+
+## Package Management
+
+Define packages to install using common_packages in your inventory, typically in group_vars/all.yml to apply them to all hosts:
+
+```yaml
+# group_vars/all.yml
+
+common_packages:
+  - curl
+  - htop
+  - jq
+  - unzip
+```
+
+Packages are installed using APT with state: present. Existing installed packages are not upgraded by this task, and an empty list skips package installation.
+
+To install packages only for a specific group, define common_packages in that group's inventory file instead:
+
+```yaml
+# group_vars/docker.yml
+
+common_packages:
+  - docker.io
+  - docker-compose
+```
+
+Package management is enabled by default. To disable it for a host or group:
+
+```yaml
+common_packages_manage: false
+```
+
+Run only the package installation tasks:
+
+```bash
+ansible-playbook site.yml --tags packages
+Package installation is separate from system upgrades, which must be explicitly run using the update tag.
+```
 
 ---
 
@@ -350,6 +400,14 @@ Run updates explicitly:
 ansible-playbook site.yml --tags update
 ```
 
+### Install Common Packages
+
+Define common_packages in inventory and run the package tasks explicitly:
+
+```bash
+ansible-playbook site.yml --tags packages
+```
+
 ---
 
 ## Design Principles
@@ -373,6 +431,8 @@ ansible-playbook site.yml --tags update
 | `dns` | DNS search-domain configuration |
 | `nfs` | NFS client configuration and mounts |
 | `disks` | Local disk formatting and mounting |
+| `firewall` | Firewall configuration |
+| `packages` | Install packages listed in common_packages |
 | `update` | Package updates and reboot handling (must be explicitly tagged) |
 
 ---

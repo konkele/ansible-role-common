@@ -28,6 +28,12 @@
   import_role:
     name: geerlingguy.firewall
   when: common_firewall_manage | bool
+  tags: firewall
+
+- name: Install common packages
+  ansible.builtin.import_tasks: packages.yml
+  when: common_packages_manage | bool
+  tags: packages
 
 - name: Update packages and reboot if needed
   import_tasks: update.yml

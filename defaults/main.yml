@@ -26,5 +26,9 @@ common_firewall_manage: true
 firewall_allowed_tcp_ports:
   - 22    # SSH
 
+# Packages
+common_packages_manage: true
+common_packages: []
+
 # Update Packages
 common_update_manage: true
