@@ -1,33 +1,37 @@
 ---
 - name: Configure users
   import_tasks: users.yml
+  when: common_users_manage | bool
   tags: users
 
 - name: Configure timezone
   import_tasks: timezone.yml
+  when: common_timezone_manage | bool
   tags: timezone
 
 - name: Configure DNS search domains
   import_tasks: dns.yml
+  when: common_dns_manage | bool
   tags: dns
 
 - name: Configure NFS mounts
   import_tasks: nfs.yml
+  when: common_nfs_manage | bool
   tags: nfs
 
 - name: Configure local disks
   import_tasks: disks.yml
+  when: common_disks_manage | bool
   tags: disks
 
 - name: Include geerlingguy.firewall role if desired
   import_role:
     name: geerlingguy.firewall
-  vars:
-    firewall_disable_firewalld: true
-  when: firewall_enabled | default(true)
+  when: common_firewall_manage | bool
 
 - name: Update packages and reboot if needed
   import_tasks: update.yml
+  when: common_update_manage | bool
   tags:
     - update
     - never

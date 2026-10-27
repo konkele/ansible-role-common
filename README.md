@@ -1,122 +1,173 @@
 # Common Ansible Role
 
-The **`common` role** provides baseline infrastructure configuration for Ubuntu hosts. It is designed to be **applied first** in a playbook, establishing consistent system state and shared metadata for downstream roles.
+The **`common` role** provides baseline operating system configuration for Ubuntu and Debian-based hosts. It is intended to be applied early in a playbook to establish a consistent system foundation for downstream roles.
 
-This role follows a **deterministic, inventory-driven design** intended for long-term maintainability and safe reuse in larger inventories.
+This role follows a deterministic, inventory-driven design that emphasizes predictability, idempotence, and long-term maintainability.
 
 ---
 
 ## Features
 
 * **User Management**
-
-  * Create system and human users with configurable UID/GID
-  * Manage SSH authorized keys (exclusive by default)
-  * Optional sudo access per user
+  * Create system and human users
+  * Optional UID assignment
+  * Automatic primary-group creation
+  * Manage SSH authorized keys
+  * Optional passwordless sudo access
   * User tagging for classification and automation
-  * Explicit, layered user-definition model (global → group → host)
+  * Explicit user layering model (global → group → host)
+  * Persist reconciled user metadata for downstream roles
 
 * **Timezone Management**
-
   * Enforce a consistent system timezone
 
 * **DNS Configuration**
-
-  * Configure DNS search domains
+  * Configure systemd-resolved search domains
+  * Uses drop-in configuration under `/etc/systemd/resolved.conf.d`
 
 * **Firewall Management**
+  * Optional integration with `geerlingguy.firewall`
+  * Enabled by default
+  * Can be disabled per inventory scope
 
-  * Optional baseline TCP/UDP rules via `geerlingguy.firewall`
-  * Soft dependency, enabled by default and safely disabled per host or group
-  * Safe extension by downstream roles when enabled
+* **NFS Storage**
+  * Install NFS client packages
+  * Create mount points
+  * Configure persistent NFS mounts
 
-* **Storage Management**
-
-  * NFS client configuration and mounts
-  * Local disk partitioning, formatting, and mounting
+* **Local Disk Management**
+  * Detect existing filesystems
+  * Format uninitialized disks
+  * Configure UUID-based persistent mounts
+  * Remove mounts and fstab entries
+  * Optional mount-point cleanup
 
 * **System Updates**
-
-  * Package upgrades with optional serial reboot handling
+  * Refresh package metadata
+  * Perform distribution upgrades
+  * Remove obsolete packages
+  * Automatically reboot when required
+  * Executed only when explicitly tagged
 
 * **Metadata Persistence**
+  * Writes merged user state to `/etc/ansible/common_users.yml`
+  * Provides a structured source of truth for downstream roles
 
-  * Persist merged user state to `/etc/ansible/common_users.yml`
-  * Structured, human-readable YAML suitable for downstream consumption
+---
+
+## Default Variables
+
+```yaml
+---
+# Users
+common_users_manage: true
+common_users_global: []
+common_users_group: []
+common_users_host: []
+
+# Timezone
+common_timezone_manage: true
+common_timezone: "America/Chicago"
+
+# DNS Search Domains
+common_dns_manage: true
+common_dns_search: []
+
+# NFS Mounts
+common_nfs_manage: true
+common_nfs_mounts: []
+
+# Local Disks
+common_disks_manage: true
+common_local_disks: []
+
+# Firewall
+common_firewall_manage: true
+
+firewall_allowed_tcp_ports:
+  - 22
+
+# System Updates
+common_update_manage: true
+```
 
 ---
 
 ## Firewall Behavior
 
-Firewall management is a **soft dependency**.
+Firewall management is implemented as a soft dependency.
 
-By default, the role will include `geerlingguy.firewall`. This behavior can be disabled globally, per group, or per host.
+When enabled, the role imports the `geerlingguy.firewall` role. Firewall management can be disabled globally, per group, or per host:
 
 ```yaml
-# Disable firewall management
-firewall_enabled: false
+common_firewall_manage: false
 ```
 
-When disabled, the role **does not manage firewall state** and makes no assumptions about existing rules or providers.
+When disabled, the role makes no changes to firewall configuration and does not assume ownership of existing firewall state.
 
 ---
 
 ## User Definition Model
 
-This role intentionally **does not allow `common_users` to be defined directly in inventory**.
+This role intentionally does **not** allow `common_users` to be defined directly in inventory.
 
-Ansible does not merge list variables across scopes. Allowing direct definition would result in silent overwrites and unpredictable behavior in multi-group inventories.
+Ansible does not merge list variables across scopes. Defining user lists directly would result in silent overrides and unpredictable behavior in multi-group inventories.
 
-Instead, user intent is expressed through **three explicit input variables**, each corresponding to a natural inventory scope:
+Instead, user intent is expressed using three explicit variables:
 
-| Scope  | Variable              | Intended Location        |
-| ------ | --------------------- | ------------------------ |
-| Global | `common_users_global` | `group_vars/all.yml`     |
-| Group  | `common_users_group`  | `group_vars/<group>.yml` |
-| Host   | `common_users_host`   | `host_vars/<host>.yml`   |
+| Scope | Variable | Intended Location |
+|---------|---------|---------|
+| Global | `common_users_global` | `group_vars/all.yml` |
+| Group | `common_users_group` | `group_vars/<group>.yml` |
+| Host | `common_users_host` | `host_vars/<host>.yml` |
 
 The role merges these inputs in a fixed order:
 
-```
+```text
 common_users_global
         ↓
 common_users_group
         ↓
-common_users_host   (highest precedence)
+common_users_host
 ```
 
-Users are deduplicated by `name`. When the same user appears multiple times, the **definition with the highest precedence wins**.
+Host definitions have the highest precedence.
 
-This approach avoids Ansible list-precedence pitfalls while remaining explicit and predictable.
+Users are deduplicated by `name`. If the same user appears multiple times, the highest-precedence definition wins.
+
+This approach avoids Ansible list-precedence pitfalls while remaining predictable and easy to reason about.
 
 ---
 
 ## Inventory Examples
 
-### Global users
+### Global Users
 
 ```yaml
 # group_vars/all.yml
+
 common_users_global:
   - name: homelab
     uid: 1000
     sudo: true
 ```
 
-### Group-specific users
+### Group-Specific Users
 
 ```yaml
-# group_vars/db.yml
+# group_vars/database.yml
+
 common_users_group:
   - name: postgres
     uid: 101
     system: true
 ```
 
-### Host-specific overrides
+### Host-Specific Overrides
 
 ```yaml
 # host_vars/db01.yml
+
 common_users_host:
   - name: postgres
     uid: 999
@@ -124,15 +175,104 @@ common_users_host:
 
 ---
 
+## DNS Examples
+
+### Configure Search Domains
+
+```yaml
+common_dns_search:
+  - lab.local
+  - corp.example.com
+```
+
+Resulting configuration:
+
+```ini
+[Resolve]
+Domains=lab.local corp.example.com
+```
+
+---
+
+## NFS Examples
+
+### Mount an NFS Export
+
+```yaml
+common_nfs_mounts:
+  - src: nas01:/exports/media
+    dest: /mnt/media
+    opts: rw,sync,hard,intr
+    state: mounted
+```
+
+### Multiple NFS Mounts
+
+```yaml
+common_nfs_mounts:
+  - src: nas01:/exports/media
+    dest: /mnt/media
+
+  - src: nas01:/exports/backups
+    dest: /mnt/backups
+```
+
+---
+
+## Local Disk Examples
+
+### Format and Mount a Disk
+
+```yaml
+common_local_disks:
+  - device: /dev/sdb
+    fs_type: ext4
+    mount_point: /mnt/data
+    state: mounted
+```
+
+### Customize Mount Options
+
+```yaml
+common_local_disks:
+  - device: /dev/sdb
+    fs_type: ext4
+    mount_point: /mnt/data
+    mount_opts: defaults,noatime
+    owner: root
+    group: root
+```
+
+### Remove a Mount
+
+```yaml
+common_local_disks:
+  - device: /dev/sdb
+    mount_point: /mnt/data
+    state: absent
+```
+
+### Remove a Mount and Delete the Directory
+
+```yaml
+common_local_disks:
+  - device: /dev/sdb
+    mount_point: /mnt/data
+    state: absent
+    purge: true
+```
+
+---
+
 ## Persisted User Metadata
 
-After execution, the role writes the final, reconciled user state to:
+After execution, the role writes the reconciled user definition to:
 
-```
+```text
 /etc/ansible/common_users.yml
 ```
 
-This file represents the **authoritative local user model** and is intended to be consumed by downstream roles.
+This file becomes the authoritative local user model for downstream roles.
 
 ### Example
 
@@ -143,31 +283,30 @@ common_users:
     gid: 1000
     home: /home/homelab
     shell: /bin/bash
-    system: false
     sudo: true
-    tags:
-      - dev
     authorized_keys_exclusive: true
     authorized_keys:
-      - "ssh-ed25519 AAAA..."
+      - ssh-ed25519 AAAA...
+    tags:
+      - dev
 
   - name: postgres
     uid: 999
     gid: 999
     home: /var/lib/postgresql
     shell: /usr/sbin/nologin
-    system: true
     sudo: false
-    tags: []
-    authorized_keys_exclusive: true
     authorized_keys: []
+    authorized_keys_exclusive: true
+    system: true
+    tags: []
 ```
 
 ---
 
 ## Downstream Role Integration
 
-Downstream roles should treat `/etc/ansible/common_users.yml` as a **required dependency**:
+Roles that depend on user metadata should validate its existence before proceeding.
 
 ```yaml
 - name: Verify common user metadata exists
@@ -180,11 +319,11 @@ Downstream roles should treat `/etc/ansible/common_users.yml` as a **required de
     file: /etc/ansible/common_users.yml
   when: common_users_file.stat.exists
 
-- name: Abort if missing
+- name: Abort if metadata is missing
   ansible.builtin.fail:
     msg: >
-      The common role must be applied before this role.
-      Missing /etc/ansible/common_users.yml
+      The common role must be executed before this role.
+      Missing /etc/ansible/common_users.yml.
   when: not common_users_file.stat.exists
 ```
 
@@ -193,32 +332,47 @@ Downstream roles should treat `/etc/ansible/common_users.yml` as a **required de
 ## Example Playbook
 
 ```yaml
-- name: Baseline configuration
+- name: Baseline Configuration
   hosts: all
   become: true
+
   roles:
-    - common
+    - role: common
+```
+
+### Run System Updates
+
+Updates are intentionally tagged `never` to prevent accidental execution.
+
+Run updates explicitly:
+
+```bash
+ansible-playbook site.yml --tags update
 ```
 
 ---
 
 ## Design Principles
 
-* Inventory expresses **intent**, not final state
-* The role merges intent explicitly and deterministically
-* `common_users` is **generated output**, never inventory input
-* Shared state is persisted for auditability and reuse
-* Avoids implicit Ansible behaviors that do not scale
+* Inventory expresses desired state
+* User definitions merge deterministically across inventory scopes
+* Host-level values always take precedence
+* Shared metadata is persisted for reuse and auditing
+* Storage configuration is UUID-based wherever possible
+* Optional subsystems can be independently enabled or disabled
+* Avoid implicit Ansible behaviors that become problematic at scale
 
 ---
 
 ## Tags
 
-| Tag        | Description                                 |
-| ---------- | ------------------------------------------- |
-| `users`    | User and SSH configuration                  |
-| `dns`      | DNS search domains                          |
-| `timezone` | Timezone configuration                      |
-| `nfs`      | NFS mounts                                  |
-| `disks`    | Local disk formatting and mounting          |
-| `update`   | System update and serial reboot if required |
+| Tag | Description |
+|------|-------------|
+| `users` | User and SSH configuration |
+| `timezone` | Timezone configuration |
+| `dns` | DNS search-domain configuration |
+| `nfs` | NFS client configuration and mounts |
+| `disks` | Local disk formatting and mounting |
+| `update` | Package updates and reboot handling (must be explicitly tagged) |
+
+---

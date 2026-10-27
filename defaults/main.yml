@@ -1,21 +1,30 @@
 ---
-# Firewall
-firewall_allowed_tcp_ports:
-  - 22    # SSH
-
 # Users
+common_users_manage: true
 common_users_global: []
 common_users_group: []
 common_users_host: []
 
 # Timezone
+common_timezone_manage: true
 common_timezone: "America/Chicago"
 
 # DNS search suffixes
+common_dns_manage: true
 common_dns_search: []
 
 # NFS mounts
+common_nfs_manage: true
 common_nfs_mounts: []
 
 # Local disks
+common_disks_manage: true
 common_local_disks: []
+
+# Firewall
+common_firewall_manage: true
+firewall_allowed_tcp_ports:
+  - 22    # SSH
+
+# Update Packages
+common_update_manage: true
