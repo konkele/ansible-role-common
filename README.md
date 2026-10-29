@@ -12,10 +12,10 @@ This role follows a deterministic, inventory-driven design that emphasizes predi
   * Create system and human users
   * Optional UID assignment
   * Automatic primary-group creation
-  * Manage SSH authorized keys
+  * Manage SSH authorized keys, with configurable exclusivity
   * Optional passwordless sudo access
   * User tagging for classification and automation
-  * Explicit user layering model (global → group → host)
+  * Merge user definitions across global, group, and host scopes
   * Persist reconciled user metadata for downstream roles
 
 * **Timezone Management**
@@ -57,48 +57,6 @@ This role follows a deterministic, inventory-driven design that emphasizes predi
 * **Metadata Persistence**
   * Writes merged user state to `/etc/ansible/common_users.yml`
   * Provides a structured source of truth for downstream roles
-
----
-
-## Default Variables
-
-```yaml
----
-# Users
-common_users_manage: true
-common_users_global: []
-common_users_group: []
-common_users_host: []
-
-# Timezone
-common_timezone_manage: true
-common_timezone: "America/Chicago"
-
-# DNS Search Domains
-common_dns_manage: true
-common_dns_search: []
-
-# NFS Mounts
-common_nfs_manage: true
-common_nfs_mounts: []
-
-# Local Disks
-common_disks_manage: true
-common_local_disks: []
-
-# Firewall
-common_firewall_manage: true
-
-firewall_allowed_tcp_ports:
-  - 22
-
-# Packages
-common_packages_manage: true
-common_packages: []
-
-# System Updates
-common_update_manage: true
-```
 
 ---
 
@@ -161,17 +119,15 @@ Package installation is separate from system upgrades, which must be explicitly 
 
 This role intentionally does **not** allow `common_users` to be defined directly in inventory.
 
-Ansible does not merge list variables across scopes. Defining user lists directly would result in silent overrides and unpredictable behavior in multi-group inventories.
-
-Instead, user intent is expressed using three explicit variables:
+Ansible does not automatically merge list variables across inventory scopes. Instead, define users through three explicit variables:
 
 | Scope | Variable | Intended Location |
-|---------|---------|---------|
+|---|---|---|
 | Global | `common_users_global` | `group_vars/all.yml` |
 | Group | `common_users_group` | `group_vars/<group>.yml` |
 | Host | `common_users_host` | `host_vars/<host>.yml` |
 
-The role merges these inputs in a fixed order:
+The role processes these inputs in a fixed order:
 
 ```text
 common_users_global
@@ -181,11 +137,12 @@ common_users_group
 common_users_host
 ```
 
-Host definitions have the highest precedence.
+User definitions are merged by `name`. When the same user appears in multiple scopes:
 
-Users are deduplicated by `name`. If the same user appears multiple times, the highest-precedence definition wins.
+- **Scalar values:** Later definitions override earlier values, so host-level values have the highest precedence.
+- **List values:** Lists are merged using Ansible's `append_rp` behavior, retaining values from multiple scopes while removing duplicates.
 
-This approach avoids Ansible list-precedence pitfalls while remaining predictable and easy to reason about.
+Users can define `authorized_keys` to manage SSH public keys. The `authorized_keys_exclusive` variable defaults to `true` and controls whether unlisted keys are removed.
 
 ---
 

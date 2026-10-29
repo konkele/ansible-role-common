@@ -7,19 +7,33 @@
       Do not define 'common_users' in inventory.
       Use common_users_global, common_users_group, or common_users_host.
 
-- name: Merge and deduplicate users from all scopes
-  set_fact:
+- name: Initialize merged user list
+  ansible.builtin.set_fact:
+    merged_common_users: []
+
+- name: Merge users from all scopes
+  ansible.builtin.set_fact:
     merged_common_users: >-
       {{
-        (
-          common_users_global +
-          common_users_group +
-          common_users_host
-        )
-        | reverse
-        | unique(attribute='name')
-        | reverse
+        merged_common_users
+        | rejectattr('name', 'equalto', item.name)
+        | list
+        +
+        [
+          (
+            (
+              merged_common_users
+              | selectattr('name', 'equalto', item.name)
+              | first
+              | default({})
+            )
+            | combine(item, recursive=true, list_merge='append_rp')
+          )
+        ]
       }}
+  loop: "{{ common_users_global + common_users_group + common_users_host }}"
+  loop_control:
+    label: "{{ item.name }}"
 
 - name: Ensure user exists
   user:
@@ -77,16 +91,14 @@
 - name: Set authorized keys
   authorized_key:
     user: "{{ user.name }}"
-    key: "{{ key }}"
+    key: "{{ user.authorized_keys | join('\n') }}"
     state: present
     exclusive: "{{ user.authorized_keys_exclusive | default(true) }}"
-  loop: "{{ merged_common_users | subelements('authorized_keys', skip_missing=True) }}"
+  loop: "{{ merged_common_users }}"
   loop_control:
-    loop_var: pair
-    label: "{{ pair.0.name }}:{{ pair.1 }}"
-  vars:
-    user: "{{ pair.0 }}"
-    key: "{{ pair.1 }}"
+    loop_var: user
+    label: "{{ user.name }}"
+  when: user.authorized_keys | default([]) | length > 0
   no_log: true
 
 - name: Get UID/GID from OS for each user
